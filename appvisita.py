@@ -1,48 +1,65 @@
 import streamlit as st
+import pandas as pd
+from fpdf import FPDF
 
-# Configuración de página optimizada para móviles
-st.set_page_config(page_title="Auditoría Móvil", layout="centered", initial_sidebar_state="collapsed")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Auditoría Caja Arequipa", layout="centered")
 
-# Estilo para que los campos sean fáciles de tocar en móvil
-st.markdown("""
-    <style>
-    .stTextInput>div>div>input { font-size: 16px !important; }
-    .stButton>button { width: 100%; height: 50px; font-weight: bold; }
-    div[data-testid="stExpander"] { border: 1px solid #8B0000; border-radius: 10px; }
-    </style>
-""", unsafe_allow_html=True)
+# --- AUTENTICACIÓN ---
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
-st.title("📱 Auditoría Caja Arequipa")
+def login():
+    st.title("🔐 Acceso de Auditor")
+    user = st.text_input("Usuario")
+    pwd = st.text_input("Contraseña", type="password")
+    if st.button("Ingresar"):
+        if user == "auditor" and pwd == "caja2026":
+            st.session_state.logged_in = True
+            st.rerun()
+        else:
+            st.error("Credenciales inválidas")
 
-# Navegación compacta usando Acordeones
-with st.expander("📄 1. Datos Generales", expanded=True):
-    st.text_input("Titular", placeholder="[tituclie]")
-    st.text_input("Cuenta Cliente", placeholder="[cuentacliente]")
-    col1, col2 = st.columns(2)
-    col1.text_input("Analista Vigente", placeholder="[analistavigente]")
-    col2.text_input("Analista Evaluador", placeholder="[analistaevaluador]")
-    st.text_input("Importe (S/.)", placeholder="[importe]")
+if not st.session_state.logged_in:
+    login()
+else:
+    # --- INTERFAZ PRINCIPAL ---
+    st.markdown("<h2 style='color:#8B0000;'>📋 Formato de Visita</h2>", unsafe_allow_html=True)
+    
+    # Navegación con slider
+    paso = st.select_slider("Sección de Auditoría", options=["1. Datos", "2. Riesgos", "3. Campo", "4. Negocio", "5. Cierre"])
+    
+    if "form_data" not in st.session_state:
+        st.session_state.form_data = {}
 
-with st.expander("⚠️ 2. Riesgos y Sobreendeudamiento"):
-    st.number_input("Deuda Total (S/.)", value=0.0)
-    st.text_input("Resultado Neto", placeholder="[resultadoneto]")
+    # Formulario
+    with st.form("main_form"):
+        if paso == "1. Datos":
+            st.session_state.form_data['titular'] = st.text_input("Titular", value=st.session_state.form_data.get('titular', ''))
+            st.session_state.form_data['cuenta'] = st.text_input("Cuenta", value=st.session_state.form_data.get('cuenta', ''))
+        elif paso == "2. Riesgos":
+            st.session_state.form_data['deuda'] = st.number_input("Deuda Total (S/.)", value=st.session_state.form_data.get('deuda', 0.0))
+        elif paso == "3. Campo":
+            st.session_state.form_data['direccion'] = st.text_input("Dirección", value=st.session_state.form_data.get('direccion', ''))
+        elif paso == "4. Negocio":
+            st.session_state.form_data['ventas'] = st.number_input("Ventas (S/.)", value=st.session_state.form_data.get('ventas', 0.0))
+        elif paso == "5. Cierre":
+            st.session_state.form_data['obs'] = st.text_area("Observaciones", value=st.session_state.form_data.get('obs', ''))
+            
+        submitted = st.form_submit_button("Guardar sección en memoria")
 
-with st.expander("🏠 3. Verificación de Campo"):
-    st.text_input("Dirección Domicilio", placeholder="[direccion]")
-    st.text_area("Comentarios de Visita", placeholder="[comentarios]")
+    # --- GENERACIÓN DE INFORME PDF ---
+    if st.button("📥 Generar y Descargar PDF"):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="INFORME DE VISITA - AUDITORÍA", ln=True, align='C')
+        pdf.set_font("Arial", size=12)
+        for k, v in st.session_state.form_data.items():
+            pdf.cell(200, 10, txt=f"{k.upper()}: {v}", ln=True)
+        
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        st.download_button("Descargar PDF", data=pdf_bytes, file_name="Reporte_Auditoria.pdf", mime="application/pdf")
 
-with st.expander("📊 4. Negocio e Ingresos"):
-    st.text_input("Actividad Principal", placeholder="[actividadprincipal]")
-    col1, col2 = st.columns(2)
-    col1.number_input("Ventas (S/.)", value=0.0)
-    col2.number_input("Utilidad Neta (S/.)", value=0.0)
-
-with st.expander("👤 5. Aval y Cierre"):
-    st.text_input("Nombre del Aval")
-    st.text_input("Hecho por", placeholder="[iniau]")
-    st.date_input("Fecha de Visita")
-
-# Botón de acción grande para dedos
-if st.button("💾 GUARDAR FORMATO DE VISITA"):
-    st.success("Información guardada correctamente.")
-    st.balloons()
+    if st.sidebar.button("Cerrar Sesión"):
+        st.session_state.logged_in = False
+        st.rerun()
