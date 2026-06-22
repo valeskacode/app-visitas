@@ -1,139 +1,144 @@
 import streamlit as st
 import pandas as pd
 
-# Configuración de página ancha y adaptable para Móvil y PC
+# Configuración de pantalla ancha y adaptable (Móvil y PC)
 st.set_page_config(page_title="Auditoría Caja Arequipa", layout="wide")
 
-st.title("📊 Consulta de Visitas - Unidad de Auditoría Interna")
-st.write("Busca por DNI para rellenar y revisar los datos de las Páginas 1, 2 y 3.")
+st.title("📊 Sistema de Auditoría Interna - Caja Arequipa")
+st.write("Consulta automatizada de carpetas de evaluación por DNI.")
 
-# 1. BARRA LATERAL: Configuración de Columnas del Excel
-with st.sidebar:
-    st.header("⚙️ Mapeo de Columnas")
-    st.write("Indica en qué número de columna de tu Excel (A=0, B=1, C=2, D=3...) está cada dato:")
-    
-    uploaded_file = st.file_uploader("Carga el archivo Excel", type=["xlsx", "xls"])
-    
-    st.markdown("---")
-    st.subheader("📋 Índices de Columnas")
-    # Configuración de los campos de la Página 1
-    col_dni = st.number_input("Columna DNI (Columna D = 3)", value=3)
-    col_titular = st.number_input("Columna Titular (Columna E = 4)", value=4)
-    col_cuenta = st.number_input("Columna Cuenta Cliente", value=2)
-    col_analista = st.number_input("Columna Analista Vigente", value=20)
-    col_importe = st.number_input("Columna Importe Crédito", value=43)
-    
-    # Configuración para Datos de la Página 2 y 3 (Ajusta los valores por defecto si sabes su columna)
-    st.markdown("**Variables Pág 2 y 3**")
-    col_deuda_dir = st.number_input("Columna Deuda Directa", value=50)
-    col_deuda_tot = st.number_input("Columna Deuda Total", value=52)
-    col_direccion_dom = st.number_input("Columna Dirección Domicilio", value=10)
-    col_direccion_neg = st.number_input("Columna Dirección Negocio", value=15)
+# 1. Carga del archivo Excel
+uploaded_file = st.sidebar.file_uploader("1. Carga el Excel de Auditoría", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
     try:
-        # Leer el archivo Excel sin asumir cabeceras fijas
+        # Leer el Excel completo sin cabecera fija
         df = pd.read_excel(uploaded_file, header=None)
         st.sidebar.success("¡Excel cargado con éxito!")
-        
-        # Limpieza de la columna DNI para que la búsqueda sea exacta (quita espacios y decimales ocultos)
-        df[col_dni] = df[col_dni].astype(str).str.strip().str.replace(".0", "", regex=False)
 
-        # 2. BUSCADOR POR DNI (Diseño limpio y gigante para cualquier pantalla)
-        st.markdown("### 🔍 Buscador de Clientes")
-        dni_busqueda = st.text_input("Escribe el DNI del cliente para cargar su expediente:", placeholder="Ej. 41234567").strip()
+        # Mapeo de índices de columnas según tu estructura (A=0, B=1, C=2...)
+        col_dni = 3       # Columna D (DNI Cliente)
+        col_nombres = 4   # Columna E (Nombres Analista)
+        col_cargo = 14    # Columna O (Cargo Analista)
+        col_cod = 23      # Columna X (Código Analista)
 
-        if dni_busqueda:
-            # Buscar el DNI en la columna D (índice configurado)
-            resultado = df[df[col_dni] == dni_busqueda]
+        # Mapeo de las 12 Preguntas (Páginas 2 y 3)
+        preguntas_indices = {
+            "Pregunta 1 (AA)": 26, "Pregunta 2 (AD)": 29, "Pregunta 3 (AG)": 32,
+            "Pregunta 4 (AJ)": 35, "Pregunta 5 (AM)": 38, "Pregunta 6 (AP)": 41,
+            "Pregunta 7 (AS)": 44, "Pregunta 8 (AV)": 47, "Pregunta 9 (AY)": 50,
+            "Pregunta 10 (BB)": 53, "Pregunta 11 (BE)": 56, "Pregunta 12 (BH)": 59
+        }
 
-            if not resultado.empty:
-                fila = resultado.index[0] # Tomamos la primera fila encontrada
+        # --- FUNCIÓN DE LIMPIEZA TOTAL DE DNI ---
+        def limpiar_dni(val):
+            if pd.isna(val):
+                return ""
+            if isinstance(val, float):
+                if val.is_integer():
+                    val = int(val)
+            s = str(val).strip()
+            if s.endswith('.0'):
+                s = s[:-2]
+            # Autocompletar con ceros a la izquierda si el DNI empieza con 0
+            if s.isdigit() and len(s) <= 8 and len(s) > 0:
+                return s.zfill(8)
+            return s
+
+        # Aplicar limpieza a la columna D
+        df[col_dni] = df[col_dni].apply(limpiar_dni)
+
+        # Filtrar la lista de DNIs válidos eliminando el texto del encabezado (ej. "DNI", "DOCUMENTO")
+        lista_dnis = [
+            x for x in df[col_dni].unique() 
+            if x != "" and not x.lower().startswith("dni") and not x.lower().startswith("doc") and x.isdigit()
+        ]
+
+        # 2. BUSCADOR DESPLEGABLE (Perfecto para Celular y evita errores de digitación)
+        st.markdown("### 🔍 Selección de Expediente")
+        dni_seleccionado = st.selectbox(
+            "Busca o selecciona el DNI del cliente:", 
+            options=["-- Selecciona un DNI --"] + sorted(lista_dnis)
+        )
+
+        if dni_seleccionado != "-- Selecciona un DNI --":
+            # Buscar la fila correspondiente al DNI seleccionado
+            fila_idx = df[df[col_dni] == dni_seleccionado].index[0]
+
+            # Función auxiliar para extraer datos de forma segura sin romper el código
+            def obtener_valor(fila, columna):
+                if columna < len(df.columns):
+                    val = df.iloc[fila, columna]
+                    return "" if pd.isna(val) else str(val).strip()
+                return "No disponible"
+
+            # Extraer Datos Generales
+            cod_analista = obtener_valor(fila_idx, col_cod)
+            nombre_analista = obtener_valor(fila_idx, col_nombres)
+            cargo_analista = obtener_valor(fila_idx, col_cargo)
+
+            st.success(f"✅ Expediente cargado correctamente para el DNI: {dni_seleccionado}")
+
+            # 3. DISEÑO DE PESTAÑAS RESPONSIVO (Páginas 1, 2 y 3 del PDF)
+            tab1, tab2, tab3 = st.tabs([
+                "📄 PÁGINA 1: Datos Generales", 
+                "⚠️ PÁGINA 2: Evaluación (Preguntas 1-8)", 
+                "🏠 PÁGINA 3: Revisión de Campo (Preguntas 9-12)"
+            ])
+
+            # ================= PESTAÑA 1 =================
+            with tab1:
+                st.subheader("Información General del Analista Evaluado")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.text_input("Código del Analista (Columna X)", value=cod_analista, disabled=True)
+                    st.text_input("Nombres y Apellidos (Columna E)", value=nombre_analista, disabled=True)
+                with c2:
+                    st.text_input("Cargo (Columna O)", value=cargo_analista, disabled=True)
+                    st.text_input("DNI del Cliente Consultado (Columna D)", value=dni_seleccionado, disabled=True)
+
+            # ================= PESTAÑA 2 =================
+            with tab2:
+                st.subheader("Criterios de Riesgo y Evaluación de Políticas")
+                st.info("Valores recuperados desde el Excel para las preguntas del formulario:")
                 
-                # Extracción segura de datos desde el Excel según tus índices de la barra lateral
-                val_titular = df.iloc[fila, col_titular] if col_titular < len(df.columns) else "No mapeado"
-                val_cuenta = df.iloc[fila, col_cuenta] if col_cuenta < len(df.columns) else "No mapeado"
-                val_analista = df.iloc[fila, col_analista] if col_analista < len(df.columns) else "No mapeado"
-                val_importe = df.iloc[fila, col_importe] if col_importe < len(df.columns) else "0.00"
+                # Mostrar preguntas de la 1 a la 8 en un diseño limpio adaptado a móvil
+                c3, c4 = st.columns(2)
+                with c3:
+                    st.text_area("Pregunta 1 (Columna AA)", value=obtener_valor(fila_idx, 26), height=70)
+                    st.text_area("Pregunta 2 (Columna AD)", value=obtener_valor(fila_idx, 29), height=70)
+                    st.text_area("Pregunta 3 (Columna AG)", value=obtener_valor(fila_idx, 32), height=70)
+                    st.text_area("Pregunta 4 (Columna AJ)", value=obtener_valor(fila_idx, 35), height=70)
+                with c4:
+                    st.text_area("Pregunta 5 (Columna AM)", value=obtener_valor(fila_idx, 38), height=70)
+                    st.text_area("Pregunta 6 (Columna AP)", value=obtener_valor(fila_idx, 41), height=70)
+                    st.text_area("Pregunta 7 (Columna AS)", value=obtener_valor(fila_idx, 44), height=70)
+                    st.text_area("Pregunta 8 (Columna AV)", value=obtener_valor(fila_idx, 47), height=70)
+
+            # ================= PESTAÑA 3 =================
+            with tab3:
+                st.subheader("Revisiones Pendientes y Verificación de Campo")
                 
-                val_deuda_dir = df.iloc[fila, col_deuda_dir] if col_deuda_dir < len(df.columns) else "0.00"
-                val_deuda_tot = df.iloc[fila, col_deuda_tot] if col_deuda_tot < len(df.columns) else "0.00"
-                
-                val_dir_dom = df.iloc[fila, col_direccion_dom] if col_direccion_dom < len(df.columns) else ""
-                val_dir_neg = df.iloc[fila, col_direccion_neg] if col_direccion_neg < len(df.columns) else ""
+                with st.container(border=True):
+                    st.markdown("🔍 **Resultados Financieros y Visita al Aval**")
+                    st.text_area("Pregunta 9: Revisión Pendiente (Columna AY)", value=obtener_valor(fila_idx, 50))
+                    st.text_area("Pregunta 10: Revisión Pendiente (Columna BB)", value=obtener_valor(fila_idx, 53))
+                    st.text_area("Pregunta 11: Revisión Pendiente (Columna BE)", value=obtener_valor(fila_idx, 56))
+                    st.text_area("Pregunta 12: Revisión Pendiente (Columna BH)", value=obtener_valor(fila_idx, 59))
 
-                st.success(f"✅ Mostrando expediente de: **{val_titular}**")
+            # ================= POLÍTICAS FIJAS SOLICITADAS =================
+            st.markdown("---")
+            with st.container(border=True):
+                st.markdown("📌 **Políticas Generales del Informe:**")
+                st.caption("- PAGOS INCREMENTADOS EN DIVERSAS AGENCIAS")
+                st.caption("- 8 políticas una procedimientos")
+                st.caption("- performa variable")
 
-                # 3. DISEÑO RESPONSIVO EN PESTAÑAS (Tabs)
-                # En PC se ven horizontales; en celular se adaptan perfectamente al ancho del dedo.
-                tab1, tab2, tab3 = st.tabs([
-                    "📄 PÁGINA 1: Visita al Cliente", 
-                    "⚠️ PÁGINA 2: Riesgo y Criterios", 
-                    "🏠 PÁGINA 3: Verificación de Campo"
-                ])
-
-                # ================= PESTAÑA 1 =================
-                with tab1:
-                    st.subheader("1. Datos del Cliente y del Crédito")
-                    # En PC crea dos columnas a los lados, en celular las pone una abajo de otra automáticamente
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.text_input("Titular", value=str(val_titular), disabled=True)
-                        st.text_input("DNI / LE", value=str(dni_busqueda), disabled=True)
-                        st.text_input("Cuenta Cliente", value=str(val_cuenta), disabled=True)
-                    with c2:
-                        st.text_input("Analista Vigente / Evaluador", value=str(val_analista), disabled=True)
-                        st.text_input("Importe Operación (S/.)", value=str(val_importe), disabled=True)
-                        st.text_input("Agencia", value="OFICINA ADMINISTRACION", disabled=True)
-
-                # ================= PESTAÑA 2 =================
-                with tab2:
-                    st.subheader("4. Riesgo de Sobreendeudamiento")
-                    c3, c4 = st.columns(2)
-                    with c3:
-                        st.text_input("a) Deuda Directa RCC", value=str(val_deuda_dir))
-                    with c4:
-                        st.text_input("c) Deuda Total RCC", value=str(val_deuda_tot))
-                    
-                    st.markdown("---")
-                    st.subheader("📋 Criterio para visita a Clientes (Hallazgos)")
-                    st.info("Selecciona las observaciones encontradas por el auditor:")
-                    
-                    # Checkboxes ideales para marcar desde pantallas táctiles de celulares
-                    obs_1 = st.checkbox("Indicio de dolo o fraude en la evaluación de créditos")
-                    obs_2 = st.checkbox("Evaluaciones deficientes o con sustento insuficiente")
-                    obs_3 = st.checkbox("Documentos con enmendaduras o datos inconsistentes")
-                    obs_4 = st.checkbox("No se evidenció sustento de actividad económica / ingresos")
-                    obs_5 = st.checkbox("Créditos reprogramados y refinanciados")
-
-                # ================= PESTAÑA 3 =================
-                with tab3:
-                    st.subheader("5. Verificación de Direcciones")
-                    
-                    # Contenedor visual para Domicilio
-                    with st.container(border=True):
-                        st.markdown("🏠 **Dirección del Domicilio (Visita)**")
-                        st.text_input("Dirección Encontrada", value=str(val_dir_dom))
-                        c5, c6 = st.columns(2)
-                        with c5: st.text_input("Distrito/Provincia", value="Cerro Colorado / Arequipa")
-                        with c6: st.text_input("Entrevista con:", value="")
-                        st.text_area("Comentarios de Visita (Domicilio):", placeholder="Escribe aquí los comentarios sobre la vivienda...")
-
-                    # Contenedor visual para Negocio
-                    with st.container(border=True):
-                        st.markdown("🏢 **Dirección del Negocio (Visita)**")
-                        st.text_input("Dirección Comercial", value=str(val_dir_neg))
-                        st.text_input("Tipo de Negocio / Actividad Principal", value="Comercio / Pequeña Empresa")
-                        st.text_area("Comentarios de Visita (Negocio):", placeholder="Escribe aquí las observaciones sobre el negocio...")
-
-                # ================= BOTÓN DE GUARDADO FINALES =================
-                st.markdown("---")
-                if st.button("💾 Guardar y Consolidar Informe de Auditoría", type="primary", use_container_width=True):
-                    st.success("¡Datos procesados correctamente para la fila seleccionada!")
-            else:
-                st.error(f"❌ No se encontró ningún registro con el DNI: {dni_busqueda} en la Columna {col_dni}.")
+            # Botón de Guardado adaptado a todo ancho de pantalla
+            if st.button("💾 Generar Informe PDF definitivo", type="primary", use_container_width=True):
+                st.success(f"¡Datos consolidados listos para exportar al formato de Auditoría!")
 
     except Exception as e:
-        st.error(f"Error al procesar las columnas del Excel: {e}")
+        st.error(f"Error al procesar el archivo Excel: {e}")
 else:
-    st.info("👋 Por favor, ve a la barra lateral izquierda y carga tu archivo Excel para iniciar la consulta.")
+    st.info("👋 Por favor, abre la barra lateral izquierda y sube tu archivo Excel de auditoría para comenzar.")
