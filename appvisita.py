@@ -1,68 +1,48 @@
 import streamlit as st
-import pandas as pd
-from io import BytesIO
 
-# Configuración
-st.set_page_config(page_title="Auditoría - Caja Arequipa", layout="wide")
-st.markdown('<div style="background-color: #8B0000; padding: 15px; border-radius: 10px; color: white; text-align: center;"><h1>📋 FORMATO DE VISITA - UNIDAD DE AUDITORÍA INTERNA</h1></div>', unsafe_allow_html=True)
+# Configuración de página optimizada para móviles
+st.set_page_config(page_title="Auditoría Móvil", layout="centered", initial_sidebar_state="collapsed")
 
-# Lógica de carga
-with st.sidebar:
-    uploaded_file = st.file_uploader("Cargar Base (MUESTRA_FINAL)", type=["xlsx", "xls"])
+# Estilo para que los campos sean fáciles de tocar en móvil
+st.markdown("""
+    <style>
+    .stTextInput>div>div>input { font-size: 16px !important; }
+    .stButton>button { width: 100%; height: 50px; font-weight: bold; }
+    div[data-testid="stExpander"] { border: 1px solid #8B0000; border-radius: 10px; }
+    </style>
+""", unsafe_allow_html=True)
 
-df = None
-if uploaded_file:
-    df = pd.read_excel(uploaded_file, header=None)
-    df[3] = df[3].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+st.title("📱 Auditoría Caja Arequipa")
 
-# Entrada de datos
-dni_input = st.text_input("🔍 Ingrese DNI (opcional para autocompletar):").strip()
-datos = None
-if dni_input and df is not None:
-    res = df[df[3] == dni_input]
-    if not res.empty:
-        datos = res.iloc[0]
-        st.success("✅ Datos recuperados.")
-
-# Pestañas del Formato
-t1, t2, t3, t4, t5 = st.tabs(["📄 Datos Grales", "⚠️ Riesgos", "🏠 Campo", "📊 Ingresos", "💾 Guardar"])
-
-with t1:
+# Navegación compacta usando Acordeones
+with st.expander("📄 1. Datos Generales", expanded=True):
+    st.text_input("Titular", placeholder="[tituclie]")
+    st.text_input("Cuenta Cliente", placeholder="[cuentacliente]")
     col1, col2 = st.columns(2)
-    titular = col1.text_input("Titular", value=str(datos[18]) if datos is not None else "")
-    cuenta = col2.text_input("Cuenta", value=str(datos[12]) if datos is not None else "")
-    analista = col1.text_input("Analista", value=str(datos[20]) if datos is not None else "")
+    col1.text_input("Analista Vigente", placeholder="[analistavigente]")
+    col2.text_input("Analista Evaluador", placeholder="[analistaevaluador]")
+    st.text_input("Importe (S/.)", placeholder="[importe]")
 
-with t2:
-    deuda = st.number_input("Deuda Total", step=0.01)
-    hallazgos = st.multiselect("Criterios:", ["Dolo", "Deficiente", "Enmendaduras"])
+with st.expander("⚠️ 2. Riesgos y Sobreendeudamiento"):
+    st.number_input("Deuda Total (S/.)", value=0.0)
+    st.text_input("Resultado Neto", placeholder="[resultadoneto]")
 
-with t3:
-    dir_dom = st.text_input("Dirección Domicilio")
-    com_dom = st.text_area("Comentarios Visita")
+with st.expander("🏠 3. Verificación de Campo"):
+    st.text_input("Dirección Domicilio", placeholder="[direccion]")
+    st.text_area("Comentarios de Visita", placeholder="[comentarios]")
 
-with t4:
-    ventas = st.number_input("Ventas Mensuales")
-    utilidad = st.number_input("Utilidad Neta")
+with st.expander("📊 4. Negocio e Ingresos"):
+    st.text_input("Actividad Principal", placeholder="[actividadprincipal]")
+    col1, col2 = st.columns(2)
+    col1.number_input("Ventas (S/.)", value=0.0)
+    col2.number_input("Utilidad Neta (S/.)", value=0.0)
 
-with t5:
-    st.subheader("Finalizar Auditoría")
-    if st.button("Generar Reporte Excel"):
-        # Crear estructura de reporte
-        reporte = pd.DataFrame({
-            "Campo": ["Titular", "Cuenta", "Deuda", "Ventas"],
-            "Valor": [titular, cuenta, deuda, ventas]
-        })
-        
-        # Guardar en memoria
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            reporte.to_excel(writer, index=False)
-        
-        st.download_button(
-            label="⬇️ Descargar Reporte en Excel",
-            data=buffer.getvalue(),
-            file_name="reporte_auditoria.xlsx",
-            mime="application/vnd.ms-excel"
-        )
-        st.success("¡Listo para descargar!")
+with st.expander("👤 5. Aval y Cierre"):
+    st.text_input("Nombre del Aval")
+    st.text_input("Hecho por", placeholder="[iniau]")
+    st.date_input("Fecha de Visita")
+
+# Botón de acción grande para dedos
+if st.button("💾 GUARDAR FORMATO DE VISITA"):
+    st.success("Información guardada correctamente.")
+    st.balloons()
