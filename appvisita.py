@@ -10,44 +10,35 @@ with st.sidebar:
 
 if uploaded_file is not None:
     try:
-        # 1. Cargar con encabezado
-        df = pd.read_excel(uploaded_file, header=0)
+        # header=None: Esto le dice a Pandas que NO busque encabezados
+        # Así, la Columna A es la 0, B la 1, C la 2, D la 3, S la 18.
+        df = pd.read_excel(uploaded_file, header=None)
         
-        # 2. LIMPIEZA AUTOMÁTICA: 
-        # Convertimos todos los nombres de columnas a mayúsculas para que no haya error de tipeo
-        df.columns = df.columns.str.upper().str.strip()
+        # LIMPIEZA: Convertimos la columna D (índice 3) a texto limpio
+        df[3] = df[3].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
         
-        # 3. BUSCAR NOMBRES DE COLUMNAS
-        # Aquí escribes los nombres exactos que tienen tus cabeceras en el Excel
-        # Si tu columna se llama "PENDOC" o "DNI", cámbialo abajo:
-        col_dni = "PENDOC" 
-        col_titular = "TITULAR" # Cambia esto por el nombre exacto de la columna del nombre
+        st.markdown("### 🔍 Búsqueda de Expediente")
+        dni_input = st.text_input("Ingrese el DNI (Columna D):").strip()
         
-        if col_dni not in df.columns:
-            st.error(f"❌ No encuentro la columna '{col_dni}'. Columnas disponibles: {list(df.columns)}")
-        else:
-            # Limpieza del DNI
-            df[col_dni] = df[col_dni].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        if dni_input:
+            # Filtramos por el índice 3 (Columna D)
+            resultado = df[df[3] == dni_input]
             
-            dni_input = st.text_input("Ingrese el DNI a buscar:").strip()
-            
-            if dni_input:
-                resultado = df[df[col_dni] == dni_input]
+            if not resultado.empty:
+                fila = resultado.iloc[0]
+                # Columna S es el índice 18
+                nombre = str(fila[18]) 
                 
-                if not resultado.empty:
-                    fila = resultado.iloc[0]
-                    # Extraer titular si la columna existe
-                    nombre = fila[col_titular] if col_titular in df.columns else "No encontrada"
+                st.success(f"✅ Cliente encontrado: **{nombre}**")
+                
+                # Visualización de pestañas
+                tab1, tab2, tab3 = st.tabs(["📄 PÁGINA 1", "⚠️ PÁGINA 2", "🏠 PÁGINA 3"])
+                with tab1:
+                    st.text_input("Titular (Columna S):", value=nombre, disabled=True)
+                    st.text_input("DNI (Columna D):", value=dni_input, disabled=True)
+            else:
+                st.error("DNI no encontrado en la Columna D.")
+                st.info(f"DNI buscado: {dni_input}. Asegúrese de que el DNI esté en la columna D.")
                     
-                    st.success(f"✅ Cliente: {nombre}")
-                    
-                    # Pestañas
-                    tab1, tab2, tab3 = st.tabs(["📄 PÁGINA 1", "⚠️ PÁGINA 2", "🏠 PÁGINA 3"])
-                    with tab1:
-                        st.text_input("Titular:", value=str(nombre), disabled=True)
-                        st.text_input("DNI:", value=dni_input, disabled=True)
-                else:
-                    st.warning("DNI no encontrado.")
-            
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error al procesar: {e}")
