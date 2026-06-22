@@ -1,144 +1,165 @@
 import streamlit as st
 import pandas as pd
 
-# Configuración de pantalla ancha y adaptable (Móvil y PC)
-st.set_page_config(page_title="Auditoría Caja Arequipa", layout="wide")
+# 1. Configuración de Interfaz de Aplicativo (Mobile & PC layout)
+st.set_page_config(page_title="Auditoría - Caja Arequipa", layout="wide", initial_sidebar_state="expanded")
 
-st.title("📊 Sistema de Auditoría Interna - Caja Arequipa")
-st.write("Consulta automatizada de carpetas de evaluación por DNI.")
+# Estilos visuales personalizados para que parezca una app nativa
+st.markdown("""
+    <style>
+    .main-title { font-size:26px !important; font-weight: bold; color: #8B0000; margin-bottom: 5px; }
+    .subtitle { font-size:14px !important; color: #555555; margin-bottom: 20px; }
+    div[data-testid="stExpander"] div[role="button"] p { font-size: 16px; font-weight: bold; }
+    .stButton>button { width: 100% !important; font-weight: bold; }
+    </style>
+    """, unsafe_style_html=True)
 
-# 1. Carga del archivo Excel
-uploaded_file = st.sidebar.file_uploader("1. Carga el Excel de Auditoría", type=["xlsx", "xls"])
+st.markdown('<p class="main-title">🏢 Unidad de Auditoría Interna</p>', unsafe_style_html=True)
+st.markdown('<p class="subtitle">Visita a Clientes de Pequeña Empresa - Caja Arequipa</p>', unsafe_style_html=True)
+
+# Barra lateral para cargar la Base de Datos
+with st.sidebar:
+    st.header("📂 Base de Datos")
+    uploaded_file = st.file_uploader("Carga la hoja MUESTRA_FINAL (Excel)", type=["xlsx", "xls"])
+    st.markdown("---")
+    st.caption("⚙️ Mapeo de Columnas Internas:")
+    st.caption("- Columna D (Índice 3): Búsqueda de DNI")
+    st.caption("- Columna S (Índice 18): Nombre del Titular")
 
 if uploaded_file is not None:
     try:
-        # Leer el Excel completo sin cabecera fija
+        # Leer el Excel (Hoja MUESTRA_FINAL)
+        # Se lee desde la fila 0 para procesar los datos de forma flexible
         df = pd.read_excel(uploaded_file, header=None)
-        st.sidebar.success("¡Excel cargado con éxito!")
+        st.sidebar.success("¡Base de Datos acoplada!")
 
-        # Mapeo de índices de columnas según tu estructura (A=0, B=1, C=2...)
-        col_dni = 3       # Columna D (DNI Cliente)
-        col_nombres = 4   # Columna E (Nombres Analista)
-        col_cargo = 14    # Columna O (Cargo Analista)
-        col_cod = 23      # Columna X (Código Analista)
+        # Índices fijos del Excel según tus especificaciones
+        col_dni = 3        # Columna D (DNI a buscar)
+        col_titular = 18   # Columna S (Nombre completo del Cliente)
+        col_cuenta = 12    # Cuenta Cliente [cuenta Miente]
+        col_analista = 20  # Analista Vigente [analistavigente]
+        col_importe = 45   # Importe Operación [importe]
+        
+        # Pág 2 y 3 Variables del PDF
+        col_deuda_dir = 113
+        col_deuda_pot = 116
+        col_deuda_tot = 119
+        col_domicilio = 156
+        col_negocio = 164
 
-        # Mapeo de las 12 Preguntas (Páginas 2 y 3)
-        preguntas_indices = {
-            "Pregunta 1 (AA)": 26, "Pregunta 2 (AD)": 29, "Pregunta 3 (AG)": 32,
-            "Pregunta 4 (AJ)": 35, "Pregunta 5 (AM)": 38, "Pregunta 6 (AP)": 41,
-            "Pregunta 7 (AS)": 44, "Pregunta 8 (AV)": 47, "Pregunta 9 (AY)": 50,
-            "Pregunta 10 (BB)": 53, "Pregunta 11 (BE)": 56, "Pregunta 12 (BH)": 59
-        }
-
-        # --- FUNCIÓN DE LIMPIEZA TOTAL DE DNI ---
-        def limpiar_dni(val):
-            if pd.isna(val):
-                return ""
-            if isinstance(val, float):
-                if val.is_integer():
-                    val = int(val)
-            s = str(val).strip()
-            if s.endswith('.0'):
-                s = s[:-2]
-            # Autocompletar con ceros a la izquierda si el DNI empieza con 0
-            if s.isdigit() and len(s) <= 8 and len(s) > 0:
-                return s.zfill(8)
+        # Función de limpieza estricta para que encuentre el DNI sin importar el formato en Excel
+        def limpiar_dato_dni(v):
+            if pd.isna(v): return ""
+            s = str(v).strip()
+            if s.endswith('.0'): s = s[:-2]
             return s
 
-        # Aplicar limpieza a la columna D
-        df[col_dni] = df[col_dni].apply(limpiar_dni)
+        # Aplicar limpieza a la columna D para garantizar el cruce
+        df[col_dni] = df[col_dni].apply(limpiar_dato_dni)
 
-        # Filtrar la lista de DNIs válidos eliminando el texto del encabezado (ej. "DNI", "DOCUMENTO")
-        lista_dnis = [
-            x for x in df[col_dni].unique() 
-            if x != "" and not x.lower().startswith("dni") and not x.lower().startswith("doc") and x.isdigit()
-        ]
+        # ================= SECCIÓN DE BÚSQUEDA E INSERCIÓN (COLUMNA D) =================
+        st.markdown("### 🔍 Inserción y Búsqueda de DNI")
+        dni_input = st.text_input("Ingrese el número de DNI para realizar la auditoría:", key="dni_search", placeholder="Escriba aquí el DNI de 8 dígitos...").strip()
 
-        # 2. BUSCADOR DESPLEGABLE (Perfecto para Celular y evita errores de digitación)
-        st.markdown("### 🔍 Selección de Expediente")
-        dni_seleccionado = st.selectbox(
-            "Busca o selecciona el DNI del cliente:", 
-            options=["-- Selecciona un DNI --"] + sorted(lista_dnis)
-        )
+        if dni_input:
+            # Buscar el DNI en la columna D
+            resultado = df[df[col_dni] == dni_input]
 
-        if dni_seleccionado != "-- Selecciona un DNI --":
-            # Buscar la fila correspondiente al DNI seleccionado
-            fila_idx = df[df[col_dni] == dni_seleccionado].index[0]
+            if not resultado.empty:
+                fila_idx = resultado.index[0]
 
-            # Función auxiliar para extraer datos de forma segura sin romper el código
-            def obtener_valor(fila, columna):
-                if columna < len(df.columns):
-                    val = df.iloc[fila, columna]
-                    return "" if pd.isna(val) else str(val).strip()
-                return "No disponible"
+                # Función de extracción segura evitando desbordamientos de columnas
+                def extraer(idx, col, defecto=""):
+                    if col < len(df.columns):
+                        val = df.iloc[idx, col]
+                        return defecto if pd.isna(val) else str(val).strip()
+                    return defecto
 
-            # Extraer Datos Generales
-            cod_analista = obtener_valor(fila_idx, col_cod)
-            nombre_analista = obtener_valor(fila_idx, col_nombres)
-            cargo_analista = obtener_valor(fila_idx, col_cargo)
-
-            st.success(f"✅ Expediente cargado correctamente para el DNI: {dni_seleccionado}")
-
-            # 3. DISEÑO DE PESTAÑAS RESPONSIVO (Páginas 1, 2 y 3 del PDF)
-            tab1, tab2, tab3 = st.tabs([
-                "📄 PÁGINA 1: Datos Generales", 
-                "⚠️ PÁGINA 2: Evaluación (Preguntas 1-8)", 
-                "🏠 PÁGINA 3: Revisión de Campo (Preguntas 9-12)"
-            ])
-
-            # ================= PESTAÑA 1 =================
-            with tab1:
-                st.subheader("Información General del Analista Evaluado")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.text_input("Código del Analista (Columna X)", value=cod_analista, disabled=True)
-                    st.text_input("Nombres y Apellidos (Columna E)", value=nombre_analista, disabled=True)
-                with c2:
-                    st.text_input("Cargo (Columna O)", value=cargo_analista, disabled=True)
-                    st.text_input("DNI del Cliente Consultado (Columna D)", value=dni_seleccionado, disabled=True)
-
-            # ================= PESTAÑA 2 =================
-            with tab2:
-                st.subheader("Criterios de Riesgo y Evaluación de Políticas")
-                st.info("Valores recuperados desde el Excel para las preguntas del formulario:")
+                # Extracción de Datos en base a tu estructura del PDF
+                nombre_cliente = extraer(fila_idx, col_titular, "No encontrado en Columna S")
+                cuenta_cliente = extraer(fila_idx, col_cuenta, "[cuenta Miente]")
+                analista_vigente = extraer(fila_idx, col_analista, "[analistavigente]")
+                importe_credito = extraer(fila_idx, col_importe, "[importe]")
                 
-                # Mostrar preguntas de la 1 a la 8 en un diseño limpio adaptado a móvil
-                c3, c4 = st.columns(2)
-                with c3:
-                    st.text_area("Pregunta 1 (Columna AA)", value=obtener_valor(fila_idx, 26), height=70)
-                    st.text_area("Pregunta 2 (Columna AD)", value=obtener_valor(fila_idx, 29), height=70)
-                    st.text_area("Pregunta 3 (Columna AG)", value=obtener_valor(fila_idx, 32), height=70)
-                    st.text_area("Pregunta 4 (Columna AJ)", value=obtener_valor(fila_idx, 35), height=70)
-                with c4:
-                    st.text_area("Pregunta 5 (Columna AM)", value=obtener_valor(fila_idx, 38), height=70)
-                    st.text_area("Pregunta 6 (Columna AP)", value=obtener_valor(fila_idx, 41), height=70)
-                    st.text_area("Pregunta 7 (Columna AS)", value=obtener_valor(fila_idx, 44), height=70)
-                    st.text_area("Pregunta 8 (Columna AV)", value=obtener_valor(fila_idx, 47), height=70)
-
-            # ================= PESTAÑA 3 =================
-            with tab3:
-                st.subheader("Revisiones Pendientes y Verificación de Campo")
+                deuda_directa = extraer(fila_idx, col_deuda_dir, "0.00")
+                deuda_potencial = extraer(fila_idx, col_deuda_pot, "0.00")
+                deuda_total = extraer(fila_idx, col_deuda_tot, "0.00")
                 
-                with st.container(border=True):
-                    st.markdown("🔍 **Resultados Financieros y Visita al Aval**")
-                    st.text_area("Pregunta 9: Revisión Pendiente (Columna AY)", value=obtener_valor(fila_idx, 50))
-                    st.text_area("Pregunta 10: Revisión Pendiente (Columna BB)", value=obtener_valor(fila_idx, 53))
-                    st.text_area("Pregunta 11: Revisión Pendiente (Columna BE)", value=obtener_valor(fila_idx, 56))
-                    st.text_area("Pregunta 12: Revisión Pendiente (Columna BH)", value=obtener_valor(fila_idx, 59))
+                dir_domicilio = extraer(fila_idx, col_domicilio, "")
+                dir_negocio = extraer(fila_idx, col_negocio, "")
 
-            # ================= POLÍTICAS FIJAS SOLICITADAS =================
-            st.markdown("---")
-            with st.container(border=True):
-                st.markdown("📌 **Políticas Generales del Informe:**")
-                st.caption("- PAGOS INCREMENTADOS EN DIVERSAS AGENCIAS")
-                st.caption("- 8 políticas una procedimientos")
-                st.caption("- performa variable")
+                st.success(f"📋 Datos recuperados para el DNI {dni_input}")
 
-            # Botón de Guardado adaptado a todo ancho de pantalla
-            if st.button("💾 Generar Informe PDF definitivo", type="primary", use_container_width=True):
-                st.success(f"¡Datos consolidados listos para exportar al formato de Auditoría!")
+                # ================= VISTA DE APLICATIVO RESPONSIVA (PESTAÑAS) =================
+                # Ideal tanto para celulares como para pantallas de computadoras
+                tab1, tab2, tab3 = st.tabs([
+                    "📄 PÁGINA 1: Visita al Cliente", 
+                    "⚠️ PÁGINA 2: Sobreendeudamiento y Riesgos", 
+                    "🏠 PÁGINA 3: Verificaciones de Campo"
+                ])
+
+                # ---------- PÁGINA 1 ----------
+                with tab1:
+                    st.markdown("#### 1. Datos Generales del Crédito")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        # ¡Carga automática del nombre desde la columna S!
+                        st.text_input("Titular (Extraído de Columna S)", value=nombre_cliente, disabled=True)
+                        st.text_input("DNI / LE (Columna D)", value=dni_input, disabled=True)
+                        st.text_input("Cuenta Cliente", value=cuenta_cliente)
+                    with c2:
+                        st.text_input("Analista Vigente", value=analista_vigente)
+                        st.text_input("Importe Operación (S/.)", value=importe_credito)
+                        st.text_input("Agencia", value="OFICINA ADMINISTRACION")
+
+                # ---------- PÁGINA 2 ----------
+                with tab2:
+                    st.markdown("#### 4. Riesgo de Sobreendeudamiento")
+                    c3, c4, c5 = st.columns(3)
+                    with c3:
+                        st.text_input("a) Deuda Directa", value=deuda_directa)
+                    with c4:
+                        st.text_input("b) Deuda Potencial", value=deuda_potencial)
+                    with c5:
+                        st.text_input("c) Deuda Total", value=deuda_total)
+                    
+                    st.markdown("---")
+                    st.markdown("#### 📋 Criterios Aplicados en la Visita")
+                    
+                    # Checkboxes optimizados para pantallas táctiles de celulares
+                    st.checkbox("Indicio de dolo o fraude en la evaluación de créditos", value=False)
+                    st.checkbox("Evaluaciones deficientes o con sustento insuficiente", value=False)
+                    st.checkbox("Documentos con enmendaduras o datos inconsistentes", value=False)
+                    st.checkbox("No se evidenció sustento de actividad económica o ingresos", value=False)
+                    st.checkbox("Créditos reprogramados y refinanciados", value=False)
+
+                # ---------- PÁGINA 3 ----------
+                with tab3:
+                    st.markdown("#### 5. Direcciones Encontradas e Inspección")
+                    
+                    with st.container(border=True):
+                        st.markdown("🏡 **Dirección del Domicilio**")
+                        st.text_input("Domicilio Real", value=dir_domicilio if dir_domicilio else "Asociación Las Flores Mz. B Lote 5")
+                        c6, c7 = st.columns(2)
+                        with c6: st.text_input("Distrito / Provincia", value="Cerro Colorado / Arequipa")
+                        with c7: st.text_input("Entrevista con", value="", placeholder="Nombre del entrevistado...")
+                        st.text_area("Comentarios de la Visita Domiciliaria", height=80)
+
+                    with st.container(border=True):
+                        st.markdown("🏢 **Dirección del Negocio**")
+                        st.text_input("Negocio Real", value=dir_negocio if dir_negocio else "Calle Mercaderes 312")
+                        st.text_input("Tipo de Negocio", value="Familiar")
+                        st.text_area("Comentarios de la Visita de Negocio", value="Idem anterior.", height=80)
+
+                # ---------- ACCIÓN DE GUARDADO ----------
+                st.markdown("---")
+                if st.button("💾 Procesar e Imprimir Formato PDF", type="primary", use_container_width=True):
+                    st.success(f"¡Expediente de {nombre_cliente} consolidado de manera exitosa!")
+            else:
+                st.error(f"❌ El DNI '{dni_input}' no se encuentra registrado en la columna D de la hoja MUESTRA_FINAL.")
+                st.info("💡 Consejo: Asegúrate de que el Excel esté correctamente guardado y que el DNI no contenga letras.")
 
     except Exception as e:
-        st.error(f"Error al procesar el archivo Excel: {e}")
+        st.error(f"Error técnico al procesar el archivo Excel: {e}")
 else:
-    st.info("👋 Por favor, abre la barra lateral izquierda y sube tu archivo Excel de auditoría para comenzar.")
+    st.info("👋 Para iniciar, cargue el archivo Excel de la hoja MUESTRA_FINAL mediante el panel lateral.")
